@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>微信账单 PDF 转 Excel (纯前端版)</title>
+    <title>微信账单 PDF 转 Excel 工具 - 安全隐私，本地极速转换</title>
+    <meta name="keywords" content="微信账单导出, 微信账单转Excel, PDF转Excel, 微信支付流水, 账单分析, 记账工具, 隐私保护, 本地运行, 微信对账单格式转换">
+    <meta name="description" content="一款安全可靠的微信账单转换工具，在浏览器本地将微信 PDF 账单转换为 Excel (.xlsx) 格式。所有数据仅在您设备上处理，绝不上传服务器，保障您的隐私安全。支持批量转换，简单易用。">
     <!-- 
         关于中国大陆访问速度：
         jsdelivr 在国内访问可能不稳定。
@@ -21,6 +23,8 @@
             line-height: 1.6;
             color: #333;
             min-height: 100vh; /* 确保 body 撑满屏幕以响应拖拽 */
+            display: flex;
+            flex-direction: column;
         }
         h1 {
             border-bottom: 2px solid #07c160;
@@ -53,6 +57,20 @@
             transition: all 0.3s ease;
             cursor: pointer;
             position: relative;
+        }
+        @media (max-width: 600px) {
+            .drop-zone {
+                padding: 20px 10px;
+            }
+            .drop-zone .icon {
+                font-size: 32px;
+            }
+            .drop-zone p {
+                font-size: 16px !important;
+            }
+             h1 {
+                font-size: 24px;
+            }
         }
         .drop-zone:hover {
             background-color: #e1fcef;
@@ -94,16 +112,31 @@
         }
         .file-item {
             display: flex;
-            align-items: center;
-            padding: 5px 0;
+            align-items: flex-start; /* 长文件名换行时，图标保持顶部对齐 */
+            padding: 8px 0;
             font-size: 14px;
             border-bottom: 1px solid #f5f5f5;
+            line-height: 1.4;
         }
         .file-item:last-child {
             border-bottom: none;
         }
         .file-item .file-icon {
             margin-right: 8px;
+            flex-shrink: 0; /* 防止图标被压缩 */
+            margin-top: 2px; /* 微调图标位置 */
+        }
+        .file-item .file-name {
+            flex: 1;       /* 占据剩余空间 */
+            word-break: break-all; /* 允许在任意字符间换行，防止长文件名溢出 */
+            min-width: 0;  /* Flex item 溢出修复 */
+        }
+        .file-item .file-size {
+            color: #aaa;
+            margin-left: 8px;
+            font-size: 12px;
+            white-space: nowrap; /* 大小信息不换行 */
+            flex-shrink: 0;
         }
         
         button {
@@ -132,10 +165,21 @@
             border: 1px solid #ddd;
             border-radius: 6px;
             min-height: 100px;
-            white-space: pre-wrap;
+            overflow-y: auto;          /* 允许纵向滚动 */
+            max-height: 300px;         /* 限制最大高度 */
             font-family: monospace;
             font-size: 13px;
             line-height: 1.4;
+        }
+        #status .log-entry {
+            margin-bottom: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px dashed #eee;
+            word-wrap: break-word;   /* 确保长文本换行 */
+            white-space: pre-wrap;   /* 保留每条日志内部的格式（如 Traceback） */
+        }
+        #status .log-entry:last-child {
+            border-bottom: none;
         }
         .info {
             font-size: 14px;
@@ -147,6 +191,35 @@
             font-size: 12px;
             margin-top: 5px;
         }
+        .help-link {
+            margin-top: 10px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        .help-link a {
+            color: #07c160;
+            text-decoration: none;
+            border-bottom: 1px dashed #07c160;
+        }
+        .help-link a:hover {
+            border-bottom-style: solid;
+        }
+        .footer {
+            margin-top: auto; /* 将 footer 推到 flex 容器的最底部 */
+            padding-top: 30px;
+            text-align: center;
+            font-size: 13px;
+            color: #888;
+            padding-bottom: 20px;
+        }
+        .footer a {
+            color: #07c160;
+            text-decoration: none;
+            border-bottom: 1px dashed #07c160;
+        }
+        .footer a:hover {
+            border-bottom-style: solid;
+        }
     </style>
 </head>
 <body>
@@ -157,6 +230,12 @@
         <p>这是一个纯前端运行的版本，使用了 WebAssembly (Pyodide) 技术。</p>
         <p>🔒 <strong>隐私安全</strong>：您的账单文件只在您的浏览器内处理，<b>不会</b>上传到任何服务器。</p>
         <p class="warning">⚠️ 注意：首次运行会自动下载 Python 引擎 (约 10MB)，如果你在中国大陆，加载可能会比较慢，请耐心等待或开启网络代理。</p>
+        <p class="help-link">
+            不知道去哪里下载 PDF 账单？
+            <a href="https://letmegooglethat.com/?q=%E5%A6%82%E4%BD%95%E5%AF%BC%E5%87%BA%E5%BE%AE%E4%BF%A1%E8%B4%A6%E5%8D%95+PDF" target="_blank" title="点击查看搜索教程">
+                👉 点这里，手把手教你如何获取
+            </a>
+        </p>
     </div>
 
     <div class="container">
@@ -183,8 +262,13 @@
 
         <div class="control-group">
             <label>运行日志</label>
-            <div id="status">正在下载 Python 运行时 (约 10MB)，请稍候...</div>
+            <div id="status"><div class="log-entry">正在下载 Python 运行时 (约 10MB)，请稍候...</div></div>
         </div>
+    </div>
+
+    <div class="footer">
+        <p>由 <a href="https://github.com/pyodide/pyodide" target="_blank">Pyodide</a> 提供技术支持</p>
+        <p>开源项目，欢迎 <a href="https://github.com/Wxh16144/wechat-bills" target="_blank">贡献代码</a> 或 <a href="https://github.com/Wxh16144/wechat-bills/issues" target="_blank">报告问题</a></p>
     </div>
 
     <script type="text/javascript">
@@ -276,13 +360,21 @@
             for(let i=0; i<files.length; i++) {
                 const f = files[i];
                 const sizeStr = (f.size / 1024).toFixed(1) + ' KB';
-                html += `<div class="file-item"><span class="file-icon">✅</span>${f.name} <span style="color:#aaa; margin-left:10px; font-size:12px">(${sizeStr})</span></div>`;
+                html += `<div class="file-item">
+                    <span class="file-icon">✅</span>
+                    <span class="file-name">${f.name}</span>
+                    <span class="file-size">(${sizeStr})</span>
+                </div>`;
             }
             fileListDiv.innerHTML = html;
         }
 
         function log(msg) {
-            statusDiv.innerText += msg + "\n";
+            const div = document.createElement('div');
+            div.className = 'log-entry';
+            div.innerText = msg;
+            statusDiv.appendChild(div);
+            // 自动滚动到底部
             statusDiv.scrollTop = statusDiv.scrollHeight;
             console.log(msg);
         }
@@ -375,7 +467,7 @@ def process_pdfs(file_paths, output_filename):
                         pass
                 elif ci == 5:  # 金额列
                     try:
-                        cell.value = float(col)
+                        cell.value = float(col);
                         cell.number_format = '0.00'
                     except:
                         pass
