@@ -1,29 +1,34 @@
 # 微信账单 PDF 转 Excel 工具
 
-这是一个将微信账单 PDF 文件批量转换为 Excel (.xlsx) 格式的小工具。  
-本分支修改为命令行版本（CLI），去除了 GUI 依赖，方便在控制台环境下使用。
+这是一个将微信账单 PDF 文件批量转换为 Excel (.xlsx) 格式的小工具。本项目基于 [tangx_666/wechat-bills](https://gitee.com/tangx_666/wechat-bills) 二次开发，去除了原有的桌面 GUI 依赖，改为提供 **Web** 和 **CLI (命令行)** 两种版本，以满足不同场景的使用需求。
 
-## 源代码
+> 如需 **JSON, CSV, YAML** 等其他格式，请参考 [支持更多格式 (Issue #1)](https://github.com/Wxh16144/wechat-bills/issues/1)。
 
-原项目地址：[https://gitee.com/tangx_666/wechat-bills](https://gitee.com/tangx_666/wechat-bills)
+## 🌐 Web 版 (推荐)
 
-## 在线体验地址：[https://wxh16144.github.io/wechat-bills/](https://wxh16144.github.io/wechat-bills/)
+如果您不想配置本地环境，可以直接使用 **Web 版**。
+它完全基于浏览器运行，**所有数据处理均在您的设备本地完成**，不会上传任何账单文件，确保您的财务隐私安全。
+
+**👉 立即访问：[https://wxh16144.github.io/wechat-bills/](https://wxh16144.github.io/wechat-bills/)**
 
 <div align="center">
-    <img src="https://i.imgur.com/fDfezvD.png" alt="截图" width="400"/>
+    <img src="https://i.imgur.com/fDfezvD.png" alt="Web 版截图"/>
 </div>
 
-## 本地终端运行 (macOS/Linux)
+## 🚀 CLI 版 (命令行)
 
-如果你更习惯使用命令行 (CLI) 或者需要在本地批量处理，可以按照以下步骤运行 Python 脚本。
+专为开发者及需批量处理的用户设计，纯 Python 实现，无 GUI 依赖，轻量且便于脚本集成。
+
+### 安装步骤 (macOS/Linux)
 
 在 macOS/Linux 上，推荐使用 Python 虚拟环境来避免依赖冲突。
 
-1.  **打开终端并运行以下命令**：
+1.  **克隆项目并配置环境**：
 
     ```bash
-    # 进入项目目录
-    cd /path/to/wechat-bills
+    # 克隆项目
+    git clone --depth 1 https://github.com/Wxh16144/wechat-bills.git
+    cd wechat-bills
 
     # 创建虚拟环境 (仅需一次)
     python3 -m venv venv
@@ -32,19 +37,17 @@
     source venv/bin/activate
     ```
 
-    *激活成功后，你的终端提示符前会出现 `(venv)` 字样。*
-
 2.  **安装依赖**：
 
     ```bash
     pip install -r requirements.txt
     ```
 
-## 使用方法
+### 使用方法
 
 脚本支持直接指定输入文件或目录。
 
-### 1. 转换单个文件
+#### 1. 转换单个文件
 
 ```bash
 python WeChatBillsPdf2Xlsx.py ./账单2025.pdf
@@ -52,7 +55,7 @@ python WeChatBillsPdf2Xlsx.py ./账单2025.pdf
 
 这将在同目录下生成 Excel 文件。
 
-### 2. 转换整个目录
+#### 2. 转换整个目录
 
 ```bash
 python WeChatBillsPdf2Xlsx.py ./所有账单/
@@ -60,7 +63,7 @@ python WeChatBillsPdf2Xlsx.py ./所有账单/
 
 这将会扫描该目录下所有的 `.pdf` 文件并进行转换。
 
-### 3. 指定输出路径 (可选)
+#### 3. 指定输出路径 (可选)
 
 你可以显式指定输出文件的位置：
 
