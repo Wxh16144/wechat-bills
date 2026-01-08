@@ -7,9 +7,17 @@
 
 原项目地址：[https://gitee.com/tangx_666/wechat-bills](https://gitee.com/tangx_666/wechat-bills)
 
-## 安装步骤 (macOS/Linux)
+## 在线体验地址：[https://wxh16144.github.io/wechat-bills/](https://wxh16144.github.io/wechat-bills/)
 
-在 macOS 上，推荐使用 Python 虚拟环境来避免依赖冲突。
+<div align="center">
+    <img src="https://i.imgur.com/fDfezvD.png" alt="截图" width="400"/>
+</div>
+
+## 本地终端运行 (macOS/Linux)
+
+如果你更习惯使用命令行 (CLI) 或者需要在本地批量处理，可以按照以下步骤运行 Python 脚本。
+
+在 macOS/Linux 上，推荐使用 Python 虚拟环境来避免依赖冲突。
 
 1.  **打开终端并运行以下命令**：
 
