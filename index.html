@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>微信账单 PDF 转 Excel (纯前端版)</title>
+    <!-- 
+        关于中国大陆访问速度：
+        jsdelivr 在国内访问可能不稳定。
+        如果需要极速体验或离线使用，请访问 https://github.com/pyodide/pyodide/releases 
+        下载 pyodide-build-0.25.0.tar.bz2，解压后放在本地目录，
+        然后将下方的 src 修改为本地路径，例如 src="./pyodide/pyodide.js"
+    -->
     <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
     <style>
         body {
@@ -13,6 +20,7 @@
             padding: 20px;
             line-height: 1.6;
             color: #333;
+            min-height: 100vh; /* 确保 body 撑满屏幕以响应拖拽 */
         }
         h1 {
             border-bottom: 2px solid #07c160;
@@ -33,15 +41,82 @@
             margin-bottom: 8px;
             font-weight: bold;
         }
+        
+        /* 拖拽区域样式 */
+        .drop-zone {
+            border: 2px dashed #07c160;
+            border-radius: 12px;
+            padding: 40px 20px;
+            text-align: center;
+            background-color: #f0fdf4;
+            color: #555;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+        }
+        .drop-zone:hover {
+            background-color: #e1fcef;
+            border-color: #06ad56;
+        }
+        .drop-zone.dragover {
+            background-color: #d1fae5;
+            transform: scale(1.01);
+            border-color: #059669;
+            box-shadow: 0 0 10px rgba(7, 193, 96, 0.2);
+        }
+        .drop-zone .icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+            display: block;
+        }
+        .drop-zone p {
+            margin: 5px 0;
+        }
+        .drop-zone .hint {
+            font-size: 13px;
+            color: #888;
+        }
+        
+        /* 隐藏原始 input */
+        #fileInput {
+            display: none;
+        }
+        
+        /* 文件列表样式 */
+        .file-list {
+            text-align: left;
+            margin-top: 15px;
+            background: #fff;
+            border-radius: 6px;
+            padding: 10px;
+            border: 1px solid #eee;
+            display: none; /* 默认隐藏 */
+        }
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 5px 0;
+            font-size: 14px;
+            border-bottom: 1px solid #f5f5f5;
+        }
+        .file-item:last-child {
+            border-bottom: none;
+        }
+        .file-item .file-icon {
+            margin-right: 8px;
+        }
+        
         button {
             background-color: #07c160;
             color: white;
             border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
+            padding: 12px 24px;
+            border-radius: 6px;
             font-size: 16px;
             cursor: pointer;
             transition: background-color 0.2s;
+            display: block;
+            width: 100%;
         }
         button:hover {
             background-color: #06ad56;
@@ -52,19 +127,25 @@
         }
         #status {
             margin-top: 20px;
-            padding: 10px;
+            padding: 15px;
             background-color: #fff;
             border: 1px solid #ddd;
-            border-radius: 4px;
+            border-radius: 6px;
             min-height: 100px;
             white-space: pre-wrap;
             font-family: monospace;
-            font-size: 14px;
+            font-size: 13px;
+            line-height: 1.4;
         }
         .info {
             font-size: 14px;
             color: #666;
             margin-bottom: 20px;
+        }
+        .warning {
+            color: #e6a23c;
+            font-size: 12px;
+            margin-top: 5px;
         }
     </style>
 </head>
@@ -75,16 +156,28 @@
     <div class="info">
         <p>这是一个纯前端运行的版本，使用了 WebAssembly (Pyodide) 技术。</p>
         <p>🔒 <strong>隐私安全</strong>：您的账单文件只在您的浏览器内处理，<b>不会</b>上传到任何服务器。</p>
+        <p class="warning">⚠️ 注意：首次运行会自动下载 Python 引擎 (约 10MB)，如果你在中国大陆，加载可能会比较慢，请耐心等待或开启网络代理。</p>
     </div>
 
     <div class="container">
         <div class="control-group">
-            <label for="fileInput">1. 选择微信账单 PDF 文件 (支持多选)</label>
-            <input type="file" id="fileInput" accept="application/pdf" multiple disabled>
+            <label>1. 选择微信账单 PDF 文件</label>
+            
+            <!-- 美化后的拖拽区域 -->
+            <div id="dropZone" class="drop-zone" onclick="triggerFileSelect()">
+                <span class="icon">📄</span>
+                <p style="font-size: 18px; font-weight: 500;">点击选择 或 拖拽文件到这里</p>
+                <p class="hint">支持拖拽多个 PDF 文件到页面任意位置</p>
+                
+                <!-- 显示已选文件 -->
+                <div id="fileList" class="file-list"></div>
+            </div>
+
+            <!-- 隐藏的原始 Input -->
+            <input type="file" id="fileInput" accept="application/pdf" multiple style="display:none" onchange="handleFileSelect(this.files)">
         </div>
 
         <div class="control-group">
-            <label>2. 开始转换</label>
             <button id="convertBtn" onclick="startConversion()" disabled>正在初始化环境...</button>
         </div>
 
@@ -100,6 +193,93 @@
         const statusDiv = document.getElementById("status");
         const convertBtn = document.getElementById("convertBtn");
         const fileInput = document.getElementById("fileInput");
+        const dropZone = document.getElementById("dropZone");
+        const fileListDiv = document.getElementById("fileList");
+
+        // --- 全局拖拽支持 ---
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            document.body.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            document.body.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            document.body.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight(e) {
+            dropZone.classList.add('dragover');
+        }
+
+        function unhighlight(e) {
+            dropZone.classList.remove('dragover');
+        }
+
+        document.body.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFileSelect(files);
+        }
+
+        function triggerFileSelect() {
+            if (!fileInput.disabled) {
+                fileInput.click();
+            }
+        }
+
+        function handleFileSelect(files) {
+             if (fileInput.disabled) return; 
+             
+             if (files.length > 0) {
+                 // 简单的文件过滤：只保留 PDF，且尽可能排除目录(通常目录 type 为空且 size 特定，但在 drop 时不准)
+                 // 最简单的过滤：只看后缀名
+                 const validFiles = [];
+                 
+                 for(let i=0; i<files.length; i++) {
+                     const f = files[i];
+                     if (f.name.toLowerCase().endsWith('.pdf')) {
+                         validFiles.push(f);
+                     }
+                 }
+                 
+                 if (validFiles.length < files.length && files.length > 0) {
+                     alert("部分拖入的内容不是 PDF 文件，已被忽略。");
+                 }
+                 
+                 if(validFiles.length > 0) {
+                     // 将过滤后的文件赋值给 input (需要使用 DataTransfer)
+                     const dt = new DataTransfer();
+                     validFiles.forEach(file => dt.items.add(file));
+                     fileInput.files = dt.files;
+                     
+                     updateFileListDisplay(fileInput.files);
+                 }
+             }
+        }
+
+        function updateFileListDisplay(files) {
+            if (files.length === 0) {
+                fileListDiv.style.display = 'none';
+                return;
+            }
+            fileListDiv.style.display = 'block';
+            let html = '<div style="margin-bottom:5px; font-weight:bold;">已选文件：</div>';
+            for(let i=0; i<files.length; i++) {
+                const f = files[i];
+                const sizeStr = (f.size / 1024).toFixed(1) + ' KB';
+                html += `<div class="file-item"><span class="file-icon">✅</span>${f.name} <span style="color:#aaa; margin-left:10px; font-size:12px">(${sizeStr})</span></div>`;
+            }
+            fileListDiv.innerHTML = html;
+        }
 
         function log(msg) {
             statusDiv.innerText += msg + "\n";
@@ -128,8 +308,12 @@
                 convertBtn.innerText = "开始转换";
                 convertBtn.disabled = false;
                 fileInput.disabled = false;
+                // 更新 UI 提示
+                const hintP = dropZone.querySelector('.hint');
+                if (hintP) hintP.innerText = "环境已就绪，您可以拖拽文件了";
 
                 // 定义 Python 处理函数
+                // 这里的 Python 代码是基于 WeChatBillsPdf2Xlsx.py 核心逻辑的简化版，适配 Web 环境
                 pyodide.runPython(`
 import datetime
 import pdfplumber
@@ -142,31 +326,28 @@ def process_pdfs(file_paths, output_filename):
         total_rows = []
         for fi, file_path in enumerate(file_paths):
             print(f"正在解析: {os.path.basename(file_path)}")
+            # Web 环境下文件系统操作与本地一致
             with pdfplumber.open(file_path) as pdf:
                 for pi, page in enumerate(pdf.pages):
                     tables = page.extract_tables()
                     for ti, table in enumerate(tables):
-                        # 如果是第二个及之后的文件，且是第一页第一个表，通常是重复的表头信息，需要去掉前几行
-                        # 原逻辑: if fi != 0 and pi == 0 and ti == 0: table = table[3:] 
-                        # 请注意：微信账单格式可能会更新，这里沿用原脚本逻辑
+                        # 去重逻辑：保留第一个文件的表头，后续文件如果包含表头则去除
+                        # 原脚本逻辑：if fi != 0 and pi == 0 and ti == 0: table = table[3:]
                         if fi != 0 and pi == 0 and ti == 0:
-                            table = table[3:]
+                            table = table[3:]  
                         
                         for row in table:
                             if row and len(row) > 1:
-                                # 清理数据
+                                # 清理换行符
                                 if row[1] and "\\n" in row[1]:
                                     row[1] = row[1].replace("\\n", " ")
                                 row = [col.replace("\\n", "") if col else "" for col in row]
                                 total_rows.append(row)
         
         if len(total_rows) < 4:
-            return False, "警告: 未提取到足够的表格数据，请检查 PDF 是否为微信账单。"
+            return False, "警告:数据行数不足(少于4行)，请确认上传的是微信账单PDF。"
 
-        # 头部大概在第3行(index 2)，数据从第4行(index 3)开始 (基于原脚本逻辑)
-        # 注意: 如果只解析了一个文件，原逻辑会保留前几行作为头部信息来源
-        # total_rows[0:3] 包含标题、统计信息等
-        
+        # 头部大概在第3行(index 2)，数据从第4行(index 3)开始
         header = total_rows[2]
         data_rows = total_rows[3:]
         
@@ -185,20 +366,16 @@ def process_pdfs(file_paths, output_filename):
         for ri, row in enumerate(data_rows):
             for ci, col in enumerate(row):
                 cell = sheet.cell(row=ri + 2, column=ci + 1, value=col)
-                
-                val = col
+                # 格式转换
                 if ci == 1:  # 日期列
                     try:
-                        # 尝试解析类似于 '2023-01-01 12:00:00'
-                        dt = datetime.datetime.fromisoformat(val)
-                        cell.value = dt
+                        cell.value = datetime.datetime.fromisoformat(col)
                         cell.number_format = 'yyyy-mm-dd hh:mm:ss'
                     except:
                         pass
                 elif ci == 5:  # 金额列
                     try:
-                        f_val = float(val)
-                        cell.value = f_val
+                        cell.value = float(col)
                         cell.number_format = '0.00'
                     except:
                         pass
