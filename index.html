@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>微信账单 PDF 转 Excel (纯前端版)</title>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        h1 {
+            border-bottom: 2px solid #07c160;
+            padding-bottom: 10px;
+            color: #333;
+        }
+        .container {
+            background-color: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .control-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        button {
+            background-color: #07c160;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #06ad56;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        #status {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            min-height: 100px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .info {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>微信账单 PDF 转 Excel</h1>
+    
+    <div class="info">
+        <p>这是一个纯前端运行的版本，使用了 WebAssembly (Pyodide) 技术。</p>
+        <p>🔒 <strong>隐私安全</strong>：您的账单文件只在您的浏览器内处理，<b>不会</b>上传到任何服务器。</p>
+    </div>
+
+    <div class="container">
+        <div class="control-group">
+            <label for="fileInput">1. 选择微信账单 PDF 文件 (支持多选)</label>
+            <input type="file" id="fileInput" accept="application/pdf" multiple disabled>
+        </div>
+
+        <div class="control-group">
+            <label>2. 开始转换</label>
+            <button id="convertBtn" onclick="startConversion()" disabled>正在初始化环境...</button>
+        </div>
+
+        <div class="control-group">
+            <label>运行日志</label>
+            <div id="status">正在下载 Python 运行时 (约 10MB)，请稍候...</div>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        let pyodide = null;
+        let micropip = null;
+        const statusDiv = document.getElementById("status");
+        const convertBtn = document.getElementById("convertBtn");
+        const fileInput = document.getElementById("fileInput");
+
+        function log(msg) {
+            statusDiv.innerText += msg + "\n";
+            statusDiv.scrollTop = statusDiv.scrollHeight;
+            console.log(msg);
+        }
+
+        async function initPyodideEnv() {
+            try {
+                pyodide = await loadPyodide();
+                log("Python 运行时加载成功。");
+                
+                log("正在安装依赖库 (micropip, openpyxl, pdfplumber)... 这可能需要一点时间。");
+                await pyodide.loadPackage("micropip");
+                micropip = pyodide.pyimport("micropip");
+
+                // 安装 pandas (openpyxl 需要) 和 xml 相关
+                // pdfplumber 依赖: pdfminer.six, pillow, wand(可选)
+                // Pyodide 环境中通常自带 Pillow
+                // 一些纯 Python 包可以直接通过 micropip.install 安装
+                // 注意：最新版 pdfplumber 依赖 pypdfium2 (含C扩展，不支持 Pyodide)，因此锁定使用旧版本 0.9.0
+                
+                await micropip.install(['openpyxl', 'pdfplumber==0.9.0']);
+                
+                log("依赖库安装完成！请选择文件进行转换。");
+                convertBtn.innerText = "开始转换";
+                convertBtn.disabled = false;
+                fileInput.disabled = false;
+
+                // 定义 Python 处理函数
+                pyodide.runPython(`
+import datetime
+import pdfplumber
+import openpyxl
+import os
+
+def process_pdfs(file_paths, output_filename):
+    print(f"开始处理 {len(file_paths)} 个文件...")
+    try:
+        total_rows = []
+        for fi, file_path in enumerate(file_paths):
+            print(f"正在解析: {os.path.basename(file_path)}")
+            with pdfplumber.open(file_path) as pdf:
+                for pi, page in enumerate(pdf.pages):
+                    tables = page.extract_tables()
+                    for ti, table in enumerate(tables):
+                        # 如果是第二个及之后的文件，且是第一页第一个表，通常是重复的表头信息，需要去掉前几行
+                        # 原逻辑: if fi != 0 and pi == 0 and ti == 0: table = table[3:] 
+                        # 请注意：微信账单格式可能会更新，这里沿用原脚本逻辑
+                        if fi != 0 and pi == 0 and ti == 0:
+                            table = table[3:]
+                        
+                        for row in table:
+                            if row and len(row) > 1:
+                                # 清理数据
+                                if row[1] and "\\n" in row[1]:
+                                    row[1] = row[1].replace("\\n", " ")
+                                row = [col.replace("\\n", "") if col else "" for col in row]
+                                total_rows.append(row)
+        
+        if len(total_rows) < 4:
+            return False, "警告: 未提取到足够的表格数据，请检查 PDF 是否为微信账单。"
+
+        # 头部大概在第3行(index 2)，数据从第4行(index 3)开始 (基于原脚本逻辑)
+        # 注意: 如果只解析了一个文件，原逻辑会保留前几行作为头部信息来源
+        # total_rows[0:3] 包含标题、统计信息等
+        
+        header = total_rows[2]
+        data_rows = total_rows[3:]
+        
+        # 按日期排序 (index 1)
+        data_rows.sort(key=lambda ele: ele[1])
+
+        wb = openpyxl.Workbook()
+        sheet = wb.active
+        sheet.title = "账单"
+        
+        # 写表头
+        for ci, col in enumerate(header):
+            sheet.cell(row=1, column=ci + 1, value=col)
+            
+        # 写数据
+        for ri, row in enumerate(data_rows):
+            for ci, col in enumerate(row):
+                cell = sheet.cell(row=ri + 2, column=ci + 1, value=col)
+                
+                val = col
+                if ci == 1:  # 日期列
+                    try:
+                        # 尝试解析类似于 '2023-01-01 12:00:00'
+                        dt = datetime.datetime.fromisoformat(val)
+                        cell.value = dt
+                        cell.number_format = 'yyyy-mm-dd hh:mm:ss'
+                    except:
+                        pass
+                elif ci == 5:  # 金额列
+                    try:
+                        f_val = float(val)
+                        cell.value = f_val
+                        cell.number_format = '0.00'
+                    except:
+                        pass
+        
+        wb.save(output_filename)
+        return True, f"转换成功! 共 {len(data_rows)} 条记录。"
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return False, str(e)
+                `);
+
+            } catch (err) {
+                log("初始化失败: " + err);
+                console.error(err);
+            }
+        }
+
+        async function startConversion() {
+            if (!fileInput.files.length) {
+                alert("请先选择 PDF 文件！");
+                return;
+            }
+
+            convertBtn.disabled = true;
+            convertBtn.innerText = "处理中...";
+            log("开始读取文件...");
+
+            try {
+                // 1. 将用户选择的文件写入 Pyodide 虚拟文件系统
+                let filePaths = [];
+                for (let i = 0; i < fileInput.files.length; i++) {
+                    const file = fileInput.files[i];
+                    const arrayBuffer = await file.arrayBuffer();
+                    const uint8Array = new Uint8Array(arrayBuffer);
+                    const virtualPath = "/tmp/" + file.name;
+                    pyodide.FS.writeFile(virtualPath, uint8Array);
+                    filePaths.push(virtualPath);
+                }
+
+                log(`已加载 ${filePaths.length} 个文件，正在调用 Python 转码...`);
+
+                // 2. 调用 Python 函数
+                const outputFilename = "wechat_bills_export.xlsx";
+                // 将 JS 数组转换为 Python 列表
+                const processFunc = pyodide.globals.get("process_pdfs");
+                const result = processFunc(pyodide.toPy(filePaths), outputFilename);
+                const success = result.get(0);
+                const msg = result.get(1);
+
+                log(msg);
+
+                if (success) {
+                    // 3. 将生成的文件从 Pyodide FS 读回 JS 并下载
+                    log("正在准备下载...");
+                    const fileContent = pyodide.FS.readFile(outputFilename);
+                    const blob = new Blob([fileContent], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+                    const url = URL.createObjectURL(blob);
+                    
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `微信账单导出_${new Date().toISOString().slice(0,19).replace(/[-:T]/g,"")}.xlsx`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    log("下载已触发。");
+                    
+                    // 清理临时文件
+                    try {
+                        pyodide.FS.unlink(outputFilename);
+                        filePaths.forEach(p => pyodide.FS.unlink(p));
+                    } catch(e) {}
+                }
+
+            } catch (err) {
+                log("处理过程出错: " + err);
+                console.error(err);
+            } finally {
+                convertBtn.disabled = false;
+                convertBtn.innerText = "开始转换";
+            }
+        }
+
+        // 启动加载
+        initPyodideEnv();
+
+    </script>
+</body>
+</html>
